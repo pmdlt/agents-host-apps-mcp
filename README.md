@@ -8,7 +8,7 @@ So I built a kind of neo-cloud: a harness that runs open-source apps on your own
 
 ## Demo
 
-**Video (2 min):** VIDEO_URL_TBD
+**Video (2 min):** [youtu.be/CYt9kFdpWe8](https://youtu.be/CYt9kFdpWe8)
 
 These screenshots come from a real Claude Code session on staging, Sunday morning: one connection, then an install, maintenance and a workflow, all through the same `pilae` server.
 
