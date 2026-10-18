@@ -28,7 +28,8 @@ export const TOOL_META: readonly ToolMeta[] = [
     minRole: "member",
     mutation: false,
     destructive: false,
-    description: "List services (live)",
+    description:
+      "List services (live). Every service of the active organization, read live from its hosting environment. An unprovisioned workspace answers an empty list with a NOT_PROVISIONED warning.",
     inputSchema: {
       type: "object",
       properties: {
@@ -78,7 +79,8 @@ export const TOOL_META: readonly ToolMeta[] = [
     minRole: "member",
     mutation: false,
     destructive: false,
-    description: "Deployment history (live)",
+    description:
+      "A service's deployment history, newest first: each attempt's status, timing and error message. To see why a deployment failed, read its build log with pilae_read_deploy_log.",
     inputSchema: {
       type: "object",
       properties: {
@@ -97,7 +99,7 @@ export const TOOL_META: readonly ToolMeta[] = [
     pathParams: ["kind", "id"],
     queryParams: [],
   },
-  // … 85 more tools, listed in TOOLS.md
+  // … 91 more tools, listed in TOOLS.md
 ] as const;
 
 /** Tool metadata by name. */

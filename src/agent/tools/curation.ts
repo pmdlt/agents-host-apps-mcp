@@ -10,8 +10,8 @@ import type { OrgRole } from "../../middleware/session";
  * document automatically would be less code and a worse idea: "is this
  * destructive" and "does a human have to confirm it" are product judgements, not
  * facts an HTTP method can carry. `DELETE` is destructive, but so is
- * `PUT /env` — it replaces the whole set, and dropping a variable takes an app
- * down as surely as deleting it does.
+ * `PATCH /env` — it overwrites or removes values nobody in the conversation can
+ * see, and dropping a variable takes an app down as surely as deleting it does.
  *
  * The generator (`scripts/gen-agent-tools.ts`) reads this table, joins each row
  * to its operation in the committed OpenAPI snapshot for the input schema, and
@@ -36,13 +36,22 @@ export interface CuratedTool {
   group: ToolGroup;
   scope: ToolScope;
   /**
-   * The role the underlying route requires.
+   * The role the underlying route requires: its `x-min-role`, or `member` when
+   * the route declares no gate.
    *
-   * ADVISORY ONLY. It is not enforced here and must never be: the route is the
-   * enforcement, via its `orgRoleGate`, and duplicating the check would create a
-   * second answer that can disagree. It exists so the agent can say "that needs
-   * the owner role" instead of proposing an action that will 403, and so tool
-   * selection can hide what the caller certainly cannot use.
+   * Held equal to the route, never a second opinion of it. The catalogue check
+   * (`catalogueProblems` in scripts/agent-tools/catalogue-lib.ts, which the
+   * generator runs and `test/agent/catalogue.test.ts` runs again) fails when the
+   * two differ, so a gate raised or lowered on the route makes this row follow.
+   *
+   * It decides which tools a caller is OFFERED: a console turn shows the model
+   * only the tools the member's role reaches (`pilaeToolsForRole` in
+   * `select.ts`) and names the others under the role each needs
+   * (`withheldTools`), so the agent says "that needs the owner role" instead of
+   * raising a card whose only outcome is a 403. It is not what refuses a call:
+   * every tool stays registered, every call re-enters its route, and the
+   * route's `orgRoleGate` is still the enforcement, so a check made from this
+   * field is never the only one.
    */
   minRole: OrgRole;
   /** Changes state. Everything that is not a read. */
@@ -56,12 +65,19 @@ export interface CuratedTool {
   /**
    * Registered but never offered to the model by default.
    *
-   * Used where a hand-written tool covers the same ground more safely — the two
+   * Used where another tool covers the same ground more safely — the two
    * env/compose reads return raw values, and the agent gets keys-only views
-   * instead so a password never enters the model's context.
+   * instead so a password never enters the model's context; the whole-env
+   * replacement would rewrite values the agent cannot see, and
+   * `pilae_services_env_update` changes only the variables it names.
    */
   hidden?: boolean;
-  /** One line for the model. Overrides the route's own summary when present. */
+  /**
+   * What the model reads about the tool, in place of the route's summary and
+   * description (which it gets, joined, when this is absent). Given where the
+   * route's words, written for people, would mislead a model, or where the
+   * tool needs a rule the route does not state.
+   */
   description?: string;
 }
 
@@ -139,6 +155,12 @@ export const DENIED_OPERATIONS: Record<string, string> = {
   // Overwrites a database's live data from a dump. The console's typed-name
   // confirmation is the control; an agent proposing it would bypass that.
   "POST /v1/services/{kind}/{id}/restores": "Overwrites live data; human-only.",
+  // The route replaces the file whole, and the agent reads only its service
+  // names and images (`pilae_compose_services`), never the file: the secrets
+  // inlined in it must stay out of the model's context. So whatever the agent
+  // wrote would be a new file, losing everything it could not see.
+  "PUT /v1/services/compose/{id}/compose-file":
+    "Replacing a compose file needs its full contents, which never enter the agent's context; people edit it in the console.",
   // Thresholds decide when the workspace's owners and admins are emailed about
   // their machines. Loosening them silences the alerts meant to catch a
   // problem — the agent's own included — so it is a human decision. Reading
@@ -151,20 +173,29 @@ export const DENIED_OPERATIONS: Record<string, string> = {
   "PUT /v1/workflow-secrets/{name}":
     "Secret values never pass through the agent; members set them in the console.",
   "DELETE /v1/workflow-secrets/{name}": "Secrets are managed by people in the console.",
-  // Webhooks show a secret once and add billed domains: managed by people in
-  // the console. The routes refuse an agent grant on create, rotate and domain
-  // add as well. Read tools may come later; v1 offers none.
-  "GET /v1/workflow-hooks": "Webhooks are managed by people in the console.",
-  "POST /v1/workflow-hooks":
-    "Webhook secrets never pass through the agent; members create webhooks in the console.",
-  "GET /v1/workflow-hooks/hosts": "Webhooks are managed by people in the console.",
-  "POST /v1/workflow-hooks/hosts": "Webhook domains are added by people in the console.",
+  // Webhooks: the agent lists, creates, changes and deletes them (curated
+  // below, every write on a card), and never holds a secret, because the
+  // create route answers none to an agent grant (`withheld`). What stays with
+  // people in the console: rotating a secret, whose only purpose is to show
+  // one, and every domain write, since a customer domain is a billed resource.
+  // Those routes refuse an agent grant as well (AGENT_NOT_ALLOWED).
+  //
+  // The two lists are offered (`pilae_workflows_hooks_list`,
+  // `pilae_workflows_hook_hosts_list`), so the agent can say which workflow a
+  // webhook starts and at what address. Neither carries a secret, a signing key
+  // or a token (`serializeHook`), and an address is not a credential: the org's
+  // one host is in every address it hands an integration, and a customer domain
+  // is in public DNS, so only the bearer secret or the signature protects a
+  // hook. One that checks neither is public by design (the console calls it
+  // that), and every member reads the same list there.
+  "POST /v1/workflow-hooks/hosts":
+    "A webhook domain is a billed resource; people add one in the console.",
   "POST /v1/workflow-hooks/hosts/{hostname}/recheck":
-    "Webhooks are managed by people in the console.",
-  "DELETE /v1/workflow-hooks/hosts/{hostname}": "Webhooks are managed by people in the console.",
-  "PATCH /v1/workflow-hooks/{hook}": "Webhooks are managed by people in the console.",
-  "POST /v1/workflow-hooks/{hook}/rotate-secret": "Webhook secrets never pass through the agent.",
-  "DELETE /v1/workflow-hooks/{hook}": "Webhooks are managed by people in the console.",
+    "Webhook domains are managed by people in the console.",
+  "DELETE /v1/workflow-hooks/hosts/{hostname}":
+    "Webhook domains are managed by people in the console.",
+  "POST /v1/workflow-hooks/{hook}/rotate-secret":
+    "Rotating answers the new secret, and webhook secrets never pass through the agent; people rotate them in the console.",
   // A run's live feed, the install page's polling transport. The agent follows
   // an install through `pilae_provisioning_status`, whose phases and failure
   // already say what happened, in fewer tokens than a build log. A grant may
@@ -241,7 +272,11 @@ export const CURATED_TOOLS: CuratedTool[] = [
   // ─── Services: read ──────────────────────────────────────────────────────
   read("pilae_services_list", "GET", "/v1/services", { group: "core" }),
   read("pilae_services_get", "GET", "/v1/services/{kind}/{id}", { group: "core" }),
-  read("pilae_services_deployments", "GET", "/v1/services/{kind}/{id}/deployments"),
+  read("pilae_services_deployments", "GET", "/v1/services/{kind}/{id}/deployments", {
+    description:
+      "A service's deployment history, newest first: each attempt's status, timing and error " +
+      "message. To see why a deployment failed, read its build log with pilae_read_deploy_log.",
+  }),
   read("pilae_services_domains_list", "GET", "/v1/services/{kind}/{id}/domains"),
   read("pilae_services_public_access", "GET", "/v1/services/{kind}/{id}/public-access"),
   read("pilae_services_ports_list", "GET", "/v1/services/{kind}/{id}/ports"),
@@ -249,6 +284,15 @@ export const CURATED_TOOLS: CuratedTool[] = [
   // Hidden: `pilae_read_logs` wraps this one with redaction and an untrusted
   // marker, and the raw route would put unredacted log lines in the transcript.
   read("pilae_services_logs_raw", "GET", "/v1/services/{kind}/{id}/logs", { hidden: true }),
+  // Hidden for the same reason: a build log is text the customer's code and
+  // every dependency it installs wrote. `pilae_read_deploy_log` is what the
+  // model gets.
+  read(
+    "pilae_services_deployment_log_raw",
+    "GET",
+    "/v1/services/{kind}/{id}/deployments/{deploymentId}/log",
+    { hidden: true },
+  ),
   // Hidden: both return VALUES. `pilae_env_keys` and `pilae_compose_services`
   // are what the model gets; a value only ever reaches the browser, through the
   // owner-approved reveal.
@@ -263,7 +307,16 @@ export const CURATED_TOOLS: CuratedTool[] = [
 
   // ─── Services: operate ───────────────────────────────────────────────────
   operate("pilae_services_create", "POST", "/v1/services/{kind}", "admin"),
-  operate("pilae_services_update", "PATCH", "/v1/services/{kind}/{id}", "admin"),
+  // Curated: the route's "env and compose file have their own routes" would
+  // send the model looking for a compose-file write it is not offered.
+  operate("pilae_services_update", "PATCH", "/v1/services/{kind}/{id}", "admin", {
+    description:
+      "Change a service's settings: name, description, image, command, replicas, CPU and " +
+      "memory limits and reservations, external port, stack type. Applies on the next deploy, " +
+      "except a database's external port, which redeploys the database at once. " +
+      "Environment variables change with pilae_services_env_update; an app stack's compose " +
+      "file is edited by people in the console.",
+  }),
   operate("pilae_services_deploy", "POST", "/v1/services/{kind}/{id}/deploy", "admin"),
   operate("pilae_services_redeploy", "POST", "/v1/services/{kind}/{id}/redeploy", "admin"),
   operate("pilae_services_start", "POST", "/v1/services/{kind}/{id}/start", "admin"),
@@ -274,27 +327,34 @@ export const CURATED_TOOLS: CuratedTool[] = [
     group: "destroy",
     scope: "destructive",
   }),
-  // A full replacement, not a patch: omitting a key removes it.
-  operate("pilae_services_env_replace", "PUT", "/v1/services/{kind}/{id}/env", "admin", {
+  // The agent's way to change an environment. It names what to set and what
+  // to remove, and the route keeps everything else, values it never saw
+  // included. Still destructive: it overwrites or removes values the agent
+  // cannot see, so the customer confirms every change on a card.
+  operate("pilae_services_env_update", "PATCH", "/v1/services/{kind}/{id}/env", "admin", {
     destructive: true,
     group: "destroy",
     scope: "destructive",
     description:
+      "Add, change or remove individual environment variables of a service. Every variable " +
+      "not named is kept as it is; values are never returned. Put every change to one service " +
+      "in a single call. Set a value only when it is not a secret (an address, a port, a " +
+      "switch); never ask the customer to paste a secret into the conversation: they set " +
+      "those in the console. On an app Pilae installed, leave alone the variables Pilae set it " +
+      "up with (its generated passwords and keys, its owner account, its address): a change " +
+      "naming one is refused, and the refusal names them. Applies on the next deploy.",
+  }),
+  // Hidden: `pilae_services_env_update` covers it without losing values. A
+  // full replacement from the agent rewrote every value it cannot see.
+  operate("pilae_services_env_replace", "PUT", "/v1/services/{kind}/{id}/env", "admin", {
+    destructive: true,
+    group: "destroy",
+    scope: "destructive",
+    hidden: true,
+    description:
       "Replace a service's entire environment. Every variable not included is removed. " +
       "Read the current keys first and send the complete set.",
   }),
-  operate(
-    "pilae_services_compose_file_replace",
-    "PUT",
-    "/v1/services/compose/{id}/compose-file",
-    "admin",
-    {
-      destructive: true,
-      group: "destroy",
-      scope: "destructive",
-      description: "Replace a compose service's compose file in full.",
-    },
-  ),
   operate("pilae_services_domain_add", "POST", "/v1/services/{kind}/{id}/domains", "admin"),
   operate(
     "pilae_services_domain_update",
@@ -440,18 +500,33 @@ export const CURATED_TOOLS: CuratedTool[] = [
   // The agent's route from "I need an n8n" to a running, reachable app. Reads
   // are free; starting a run always asks, because it creates real infrastructure
   // the customer is billed for and a hostname that will outlive the conversation.
-  read("pilae_recipes_list", "GET", "/v1/recipes"),
+  // Curated: the route's description argues for the registry, to people.
+  read("pilae_recipes_list", "GET", "/v1/recipes", {
+    description:
+      "The apps Pilae can install, from its curated registry. `minRoleToProvision` is the least " +
+      "role that may install each one here now; `publicable` says whether it may be put on the " +
+      "internet. An app not listed is asked for with pilae_deploy_request_create, and a person " +
+      "on the Pilae team sets it up.",
+  }),
   // `canInstall` and the two INSTALLS_* reasons answer for the console's
   // Install button. A workspace that provisions through the agent alone gets
   // them too, and a model told to "deal with reasons[0] first" would refuse
   // exactly where pilae_provision_app works.
+  //
+  // Either field admits a caller, as the provisioning gate decides it
+  // (`admitted` in src/provisioning/policy.ts). The console's agent only runs
+  // where `agentProvisioning` is true, so "agentProvisioning decides" held for
+  // it. A remote client is admitted by App installs alone too — with the
+  // console agent switched off, as in production, by nothing else — and told
+  // that, it would refuse to install where pilae_provision_app works. The
+  // remote instructions read the same two fields (src/mcp/instructions.ts).
   read("pilae_provisioning_capabilities", "GET", "/v1/provisioning/capabilities", {
     description:
       "Whether this workspace can install an app now and, if not, why. Read it before proposing " +
-      "an install. agentProvisioning says whether you may provision here at all. canInstall, " +
-      "INSTALLS_UNAVAILABLE and INSTALLS_NOT_ENABLED describe the console's one-click Install " +
-      "button, not you: when agentProvisioning is true, ignore them and deal with the first " +
-      "other reason (no machine, a machine not ready or busy, the role, installs in progress).",
+      "an install. You may provision here at all when installsEnabled or agentProvisioning is " +
+      "true. canInstall, INSTALLS_UNAVAILABLE and INSTALLS_NOT_ENABLED describe the console's " +
+      "one-click Install button, not you: when either is true, ignore them and deal with the " +
+      "first other reason (no machine, a machine not ready or busy, the role, installs in progress).",
   }),
   read("pilae_provisioning_preflight", "GET", "/v1/provisioning/preflight", {
     description:
@@ -494,11 +569,13 @@ export const CURATED_TOOLS: CuratedTool[] = [
       "Ask the Pilae team for something by hand. kind 'app': an app not in pilae_recipes_list " +
       "(appName required, appId when the catalog lists it). kind 'machine': a machine of the " +
       "workspace's own. kind 'change': anything about what already runs (message of at least 10 " +
-      "characters). Put what the customer said in message. " +
-      "If an open request already asks for the same thing, the call is refused with that request's id.",
+      "characters). Put what the customer said in message. If an open request already asks for " +
+      "the same thing, the call is refused with that request's id.",
   }),
   operate("pilae_deploy_request_update", "PATCH", "/v1/deploy-requests/{id}", "member", {
-    description: "Amend an open deployment request: its kind, name, message or machine.",
+    description:
+      "Amend an open deployment request ('received' or 'in_progress'): its kind, name, message " +
+      "or machine.",
   }),
   destroy("pilae_deploy_request_withdraw", "DELETE", "/v1/deploy-requests/{id}", "member"),
 
@@ -531,6 +608,29 @@ export const CURATED_TOOLS: CuratedTool[] = [
       "Names of the workspace's workflow secrets (values are never readable). A step uses one with the " +
       'static input "$secret:NAME". If one is missing, ask the customer to add it under Workflows → Secrets.',
   }),
+  // A public hook's address starts runs for anyone who has it, so the
+  // description keeps the model from putting it anywhere but its answer. Only
+  // a hook with a secret or a signing key waits for a person: one with auth
+  // none and no hmac has nothing to withhold and works as soon as it exists.
+  read("pilae_workflows_hooks_list", "GET", "/v1/workflow-hooks", {
+    description:
+      "The workspace's webhooks. A POST to a webhook's `url` starts its `workflow`; the request " +
+      "body becomes the run's inputs, as pilae_workflows_guide describes. `auth` secret: callers " +
+      "send a bearer secret; `hmac`: they sign the body; auth none without hmac: anyone with the " +
+      "address can start runs, so give it only to the customer. A secret or signing key is never " +
+      "readable: a person sees it once, on creating the webhook in the console or rotating its " +
+      "secret. One you created with auth secret or with hmac was shown to no one, so it accepts " +
+      "no call until a person rotates its secret in the console, on the workflow's Webhooks tab. " +
+      "One with auth none and no hmac has neither and works at once.",
+  }),
+  read("pilae_workflows_hook_hosts_list", "GET", "/v1/workflow-hooks/hosts", {
+    description:
+      "The hosts the workspace's webhook addresses use: its own, and any domain of the " +
+      "customer's pointed at it (kind custom). A webhook answers at the same path on every active " +
+      "host. A custom domain stays pending until its CNAME record points at `cnameTarget`; " +
+      "`problem` says what is wrong. People add and remove domains in the console, under " +
+      "Workflows → Webhook domains.",
+  }),
   operate("pilae_workflows_create", "POST", "/v1/workflows", "admin", {
     description:
       "Save a new workflow. Read pilae_workflows_guide first and test the definition with " +
@@ -552,6 +652,31 @@ export const CURATED_TOOLS: CuratedTool[] = [
       "Run a saved workflow now. Returns at once with the run; poll pilae_workflows_run_get " +
       "until it ends.",
   }),
+  // Giving a workflow an internet address. Never a safe mutation: a webhook
+  // with no auth lets anyone who learns the address start runs, so the
+  // customer reads the card. The answer never carries a secret (the route
+  // withholds it from an agent grant), and the description says where a
+  // person gets one.
+  operate("pilae_workflows_hook_create", "POST", "/v1/workflow-hooks", "admin", {
+    description:
+      "Give a saved workflow a webhook: the internet address https://<the workspace's webhook " +
+      "host>/<path>, where a POST starts a run with the request body as its inputs " +
+      "(pilae_workflows_guide, section 11); the answer's hook.url is the full address. auth " +
+      "none: no secret, so anyone with the address can run the workflow; say so plainly when " +
+      "you propose it. auth secret (the default): callers send a bearer secret, which you are " +
+      "never shown: the answer withholds it, a person gets it by rotating the secret in the " +
+      "console, and until then no call is accepted. hmac adds a signature check of the body, its " +
+      "key withheld the same way. response sync: a call waits up to maxWaitSeconds (at most 30, " +
+      "default 10) and gets the workflow's result, or a 202 if the run is still going (it goes " +
+      "on); async (the default) answers 202 with the run's id at once.",
+  }),
+  operate("pilae_workflows_hook_update", "PATCH", "/v1/workflow-hooks/{hook}", "admin", {
+    description:
+      "Change a webhook. status disabled turns it off: every call is refused until it is set " +
+      "active again. response sync makes a call wait up to maxWaitSeconds (at most 30) for the " +
+      "workflow's result; ratePerMinute is how many calls a minute it accepts. Its address, auth " +
+      "and secret do not change.",
+  }),
   operate("pilae_workflows_schedule_create", "POST", "/v1/workflows/{slug}/schedules", "admin"),
   operate(
     "pilae_workflows_schedule_update",
@@ -560,6 +685,13 @@ export const CURATED_TOOLS: CuratedTool[] = [
     "admin",
   ),
   destroy("pilae_workflows_delete", "DELETE", "/v1/workflows/{slug}", "owner"),
+  // Whatever calls the address breaks at once, and a new webhook at the same
+  // path gets a new secret the callers do not have.
+  destroy("pilae_workflows_hook_delete", "DELETE", "/v1/workflow-hooks/{hook}", "admin", {
+    description:
+      "Delete a webhook. Its address stops working at once, for everything that calls it; runs " +
+      "it already started continue, and the workflow is kept.",
+  }),
   destroy(
     "pilae_workflows_schedule_delete",
     "DELETE",

@@ -4,7 +4,13 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 
 import { lazy } from "../lib/lazy";
-import { type Analytics, analyticsToolName, type Props, type ServerEvent } from "../lib/posthog";
+import {
+  type Analytics,
+  analyticsErrorCode,
+  analyticsToolName,
+  type Props,
+  type ServerEvent,
+} from "../lib/posthog";
 import type { McpPrincipal } from "./principal";
 
 /**
@@ -31,6 +37,12 @@ import type { McpPrincipal } from "./principal";
  *    text).
  *  - A tool is named as it is everywhere else (`analyticsToolName`): a
  *    customer's app tool is `app_tool`, in a call and in a listing alike.
+ *  - A call says how it ended as `http_status` and, when it failed, `code`,
+ *    which only its handler knows: the status of the route the call reached,
+ *    however it answered, and the code the client was handed. The handler
+ *    records them (`CallOutcomes`) and they ride on that call's
+ *    `$mcp_tool_call`, never as words. The console's tool spans report the
+ *    same two by the same rules (src/agent/posthog-telemetry.ts).
  *  - Nothing is added to any tool and no result is changed: `context`,
  *    `captureModel` and `enableConversationId` are off, so a client sees the
  *    tool list it saw before.
@@ -73,6 +85,11 @@ const MCP_PROPERTIES = new Set([
   // Pilae's own, from `eventProperties` below.
   "surface",
   "client_host",
+  // Pilae's own too, from the call's handler (`CallOutcomes`): a failure's
+  // code and the HTTP status of the route a call reached, which
+  // `toServerEvent` keeps only as such.
+  "code",
+  "http_status",
 ]);
 
 /** The part of a PostHog client the SDK uses: `capture`, from its event sink. */
@@ -110,6 +127,16 @@ export function toServerEvent(capture: SdkCapture, principal: McpPrincipal): Ser
       }
       continue;
     }
+    if (key === "code") {
+      // A code is all a failure may say about itself: a sentence is dropped.
+      const code = analyticsErrorCode(value);
+      if (code !== undefined) properties[key] = code;
+      continue;
+    }
+    if (key === "http_status") {
+      if (typeof value === "number" && Number.isInteger(value)) properties[key] = value;
+      continue;
+    }
     const scalar = scalarOf(value);
     if (scalar !== undefined) properties[key] = scalar;
   }
@@ -122,11 +149,78 @@ export function toServerEvent(capture: SdkCapture, principal: McpPrincipal): Ser
   };
 }
 
-/** What the SDK is given in place of a PostHog client. */
-export function mcpAnalyticsClient(analytics: Analytics, principal: McpPrincipal) {
+/**
+ * How one tool call ended, as its handler saw it (src/mcp/server.ts): when the
+ * call reached one of Pilae's routes, that route's HTTP status, however it
+ * answered, and for a failure the code the client was handed. Unchecked here:
+ * `toServerEvent` keeps the code only when it looks like one, and the status
+ * only as a number.
+ */
+export interface CallOutcome {
+  code?: unknown;
+  status?: number;
+}
+
+/**
+ * The outcomes of one server's tool calls, held until each call's
+ * `$mcp_tool_call` takes its own.
+ *
+ * The SDK builds that event around the handler, from the request and the
+ * result, so what only the handler knows — the code and the route's status —
+ * reaches it this way. A record is matched to its call by the tool's name, the
+ * one thing the event and the handler share. The SDK captures only after the
+ * handler has answered, so the record is always there first; a handler
+ * records a success too, with its route's status or empty, so a failure's
+ * record is never taken by the event of an earlier call that succeeded. Calls
+ * of one tool are matched in the order they answered.
+ *
+ * One per server, and a server is built per request (`mcpHandlerFor`): only
+ * that server's handlers write to it, and only the client handed to that same
+ * server's SDK reads it. A record can never reach another request's event.
+ */
+export class CallOutcomes {
+  readonly #byTool = new Map<string, CallOutcome[]>();
+
+  /** A call of `toolName` answered, and this is how it ended. */
+  record(toolName: string, outcome: CallOutcome): void {
+    const queue = this.#byTool.get(toolName);
+    if (queue) queue.push(outcome);
+    else this.#byTool.set(toolName, [outcome]);
+  }
+
+  /** The oldest call of `toolName` whose outcome no event has taken yet. */
+  take(toolName: string): CallOutcome | undefined {
+    return this.#byTool.get(toolName)?.shift();
+  }
+}
+
+/**
+ * A `$mcp_tool_call` with its own call's outcome on it, as `code` and
+ * `http_status`. Those two names are Pilae's alone: on a tool call, whatever
+ * the SDK put under them is replaced, and dropped when there is no record.
+ */
+function withCallOutcome(capture: SdkCapture, outcomes: CallOutcomes | undefined): SdkCapture {
+  if (capture.event !== "$mcp_tool_call") return capture;
+  const toolName = capture.properties?.$mcp_tool_name;
+  const outcome = typeof toolName === "string" ? outcomes?.take(toolName) : undefined;
+  return {
+    ...capture,
+    properties: { ...capture.properties, code: outcome?.code, http_status: outcome?.status },
+  };
+}
+
+/**
+ * What the SDK is given in place of a PostHog client: for one request's
+ * server, with that server's own `CallOutcomes`.
+ */
+export function mcpAnalyticsClient(
+  analytics: Analytics,
+  principal: McpPrincipal,
+  outcomes?: CallOutcomes,
+) {
   return {
     capture(capture: SdkCapture) {
-      const event = toServerEvent(capture, principal);
+      const event = toServerEvent(withCallOutcome(capture, outcomes), principal);
       if (event) analytics.capture(event);
     },
   };
@@ -156,18 +250,19 @@ function serverBuildOf(release: string | undefined): string | undefined {
 /**
  * Instrument one request's server. A no-op when analytics is off, and never a
  * failure: a server the SDK cannot instrument is served as it is.
+ * `outcomes` is the one its handlers record into (`buildMcpServer`).
  */
 export async function instrumentMcpServer(
   server: McpServer,
-  options: { env: Env; principal: McpPrincipal; analytics?: Analytics },
+  options: { env: Env; principal: McpPrincipal; analytics?: Analytics; outcomes?: CallOutcomes },
 ): Promise<McpServer> {
-  const { env, principal, analytics } = options;
+  const { env, principal, analytics, outcomes } = options;
   if (!analytics?.enabled) return server;
   try {
     const instrument = await loadInstrument();
     instrument(
       server,
-      mcpAnalyticsClient(analytics, principal) as unknown as Parameters<Instrument>[1],
+      mcpAnalyticsClient(analytics, principal, outcomes) as unknown as Parameters<Instrument>[1],
       {
         context: false,
         captureModel: false,
