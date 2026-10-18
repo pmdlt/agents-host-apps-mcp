@@ -17,17 +17,12 @@ Access is by invitation, because the server acts on real machines. Ask us for a 
 
 ## How it fits together
 
-```
-Claude Code ──OAuth 2.1 (client ID metadata document, no key to paste)──▶ /mcp
-                                                                           │
-             one MCP server built per request; tools = token scope ∩ live role
-                                                                           │
-             each tool re-enters the real API route in-process ──▶ route's own role check
-                                                                           │
- installed app ◀── its OpenAPI spec as typed tools (connectors, reviewed once)
-                                                                           │
- PostHog MCP analytics ◀── $mcp_* events, allowlisted, no arguments or results
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/how-it-fits-dark.png">
+  <img src="docs/how-it-fits.png" alt="An MCP client signs in once over OAuth and makes tool calls to /mcp. Each request builds a fresh MCP server whose tools are the token's scope intersected with the person's current role: 88 platform tools from a curated table joined to the API's OpenAPI document, plus typed tools for each installed app. Tool calls re-enter the real API routes in-process, where the role and tenancy checks live. The routes start installs, whose engine claims the app's admin account, locks sign-up and shows the password once to the person, and operate apps on your server. Each app's OpenAPI spec goes through the connector pipeline, which produces the app tools. MCP traffic is reported to PostHog MCP analytics as allowlisted events without arguments or results.">
+</picture>
+
+The diagram's source is `docs/diagram/how-it-fits.html`; the comment at its top gives the command that renders both PNGs.
 
 ## What to read, by agent-experience decision
 

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>How it fits together</title>
+<!--
+  Source of docs/how-it-fits.png and docs/how-it-fits-dark.png. Render with:
+    chrome --headless=new --hide-scrollbars --force-device-scale-factor=2 \
+      --window-size=1600,820 --screenshot=docs/how-it-fits.png file://$PWD/docs/diagram/how-it-fits.html
+  and again with ?dark appended to the URL for the dark version.
+-->
+<style>
+  :root {
+    --bg: #ffffff; --lane: #f6f7f9; --lane-line: #e4e7ec; --card: #ffffff; --card-line: #d6dbe2;
+    --text: #0f172a; --muted: #556070; --arrow: #8b94a3; --chip: #eef1f5; --code: #f3f4f6;
+    --agent: #2563eb; --mcp: #7c3aed; --platform: #059669; --analytics: #d97706;
+    --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 4px 14px rgba(15, 23, 42, .05);
+  }
+  .dark {
+    --bg: #0d1117; --lane: #141a22; --lane-line: #262d37; --card: #1a2029; --card-line: #333b47;
+    --text: #e6edf3; --muted: #9ba6b4; --arrow: #6f7a88; --chip: #262d37; --code: #222934;
+    --agent: #60a5fa; --mcp: #a78bfa; --platform: #34d399; --analytics: #fbbf24;
+    --shadow: none;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1600px; height: 820px; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--text); position: relative;
+    font: 14px/1.4 -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .lane {
+    position: absolute; top: 56px; height: 744px; border-radius: 18px;
+    background: var(--lane); border: 1px solid var(--lane-line);
+  }
+  .lane-label {
+    position: absolute; top: 22px; font-size: 12px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; display: flex; align-items: center; gap: 8px;
+  }
+  .lane-label i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .lane-label span { color: var(--muted); font-weight: 600; letter-spacing: .02em; text-transform: none; }
+  .card {
+    position: absolute; background: var(--card); border: 1px solid var(--card-line);
+    border-radius: 14px; padding: 14px 16px 14px 19px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent);
+  }
+  .t { font-size: 17px; font-weight: 650; letter-spacing: -.01em; margin-bottom: 5px; }
+  .s { color: var(--muted); font-size: 13.5px; }
+  .s + .s { margin-top: 4px; }
+  .s b { color: var(--text); font-weight: 600; }
+  code {
+    font: 12px/1.3 "SF Mono", Menlo, monospace; background: var(--code); border-radius: 6px;
+    padding: 5px 7px; display: inline-block; margin-top: 9px; color: var(--text);
+  }
+  .chips { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .ask { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .ask div { background: var(--chip); border-radius: 9px; padding: 8px 11px; font-size: 13.5px; }
+  .chip {
+    background: var(--chip); border-radius: 9px; padding: 9px 11px; font-size: 13.5px; font-weight: 600;
+  }
+  .agent { --accent: var(--agent); } .mcp { --accent: var(--mcp); }
+  .platform { --accent: var(--platform); } .analytics { --accent: var(--analytics); }
+  svg { position: absolute; inset: 0; width: 1600px; height: 820px; pointer-events: none; }
+  .wire { fill: none; stroke: var(--arrow); stroke-width: 1.8; }
+  .dash { stroke-dasharray: 5 5; }
+  .lbl {
+    font: 600 12px -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; fill: var(--muted);
+    paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round;
+  }
+  .lbl.on-lane { stroke: var(--lane); }
+</style>
+</head>
+<body>
+<script>if (location.search.includes("dark")) document.body.classList.add("dark");</script>
+
+<!-- Lanes -->
+<div class="lane" style="left:20px;width:360px"></div>
+<div class="lane" style="left:450px;width:480px"></div>
+<div class="lane" style="left:1000px;width:580px"></div>
+<div class="lane-label agent" style="left:40px"><i style="background:var(--agent)"></i>Agent</div>
+<div class="lane-label mcp" style="left:470px"><i style="background:var(--mcp)"></i>MCP server <span>/mcp</span></div>
+<div class="lane-label platform" style="left:1020px"><i style="background:var(--platform)"></i>Platform <span>and your servers</span></div>
+
+<!-- Agent -->
+<div class="card agent" style="left:40px;top:84px;width:320px;height:104px">
+  <div class="t">You</div>
+  <div class="s">Approve each risky step in the client. See an install's password once, in the console.</div>
+</div>
+<div class="card agent" style="left:40px;top:244px;width:320px;height:146px">
+  <div class="t">MCP client</div>
+  <div class="s">Claude Code, Cursor, claude.ai</div>
+  <code>claude mcp add --transport http …/mcp</code>
+</div>
+<div class="card agent" style="left:40px;top:440px;width:320px;height:208px">
+  <div class="t">Ask in plain words</div>
+  <div class="ask">
+    <div>“Install n8n for the ops team.”</div>
+    <div>“Is anything short on memory?”</div>
+    <div>“Back up the database now.”</div>
+  </div>
+</div>
+
+<!-- MCP server -->
+<div class="card mcp" style="left:470px;top:84px;width:440px;height:104px">
+  <div class="t">OAuth 2.1 sign-in</div>
+  <div class="s">Client ID metadata document: no API key to paste, no app to register.</div>
+</div>
+<div class="card mcp" style="left:470px;top:244px;width:440px;height:146px">
+  <div class="t">A fresh server for every request</div>
+  <div class="s">Tools offered = <b>token scope ∩ your role right now</b>.</div>
+  <div class="s">Re-checked on every call, so a member's client never even lists a delete tool.</div>
+</div>
+<div class="card mcp" style="left:470px;top:440px;width:205px;height:160px">
+  <div class="t">88 platform tools</div>
+  <div class="s">A hand-curated table joined to the API's OpenAPI document. Each tool is marked read, write or destructive.</div>
+</div>
+<div class="card mcp" style="left:705px;top:440px;width:205px;height:160px">
+  <div class="t">App tools</div>
+  <div class="s">Typed tools for each installed app's own API, called over the private network.</div>
+</div>
+<div class="card analytics" style="left:470px;top:660px;width:440px;height:116px">
+  <div class="t">PostHog MCP analytics</div>
+  <div class="s">Sessions, clients, latency and errors per tool.</div>
+  <div class="s">Allowlisted events only: no arguments, results or error text.</div>
+</div>
+
+<!-- Platform -->
+<div class="card platform" style="left:1020px;top:244px;width:290px;height:146px">
+  <div class="t">The real API routes</div>
+  <div class="s">The role and tenancy checks live here, once, for the console and the agent alike.</div>
+  <div class="s">Secrets are redacted before the model.</div>
+</div>
+<div class="card platform" style="left:1020px;top:440px;width:290px;height:160px">
+  <div class="t">Install engine</div>
+  <div class="s">Claims the app's admin account, locks sign-up, and shows the password once, to you. The agent never sees it.</div>
+</div>
+<div class="card platform" style="left:1020px;top:660px;width:290px;height:116px">
+  <div class="t">Connector pipeline</div>
+  <div class="s">Spec → classify → rank → fingerprint. A person reviews again only when an operation can do more than before.</div>
+</div>
+<div class="card platform" style="left:1370px;top:244px;width:190px;height:532px">
+  <div class="t">Your server</div>
+  <div class="s">On a private network. Apps stay off the internet unless you say so.</div>
+  <div class="chips">
+    <div class="chip">n8n</div>
+    <div class="chip">Directus</div>
+    <div class="chip">Metabase</div>
+    <div class="chip">Vaultwarden</div>
+  </div>
+</div>
+
+<!-- Wires -->
+<svg viewBox="0 0 1600 820">
+  <defs>
+    <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/>
+    </marker>
+  </defs>
+
+  <!-- you ↔ client -->
+  <path class="wire" d="M200,188 V244" marker-start="url(#head)" marker-end="url(#head)"/>
+  <text class="lbl on-lane" x="212" y="221">approves</text>
+
+  <!-- client → OAuth -->
+  <path class="wire" d="M360,280 H415 V136 H470" marker-end="url(#head)"/>
+  <text class="lbl" x="387" y="212" text-anchor="middle" transform="rotate(-90 387 212)">sign in once</text>
+
+  <!-- client ↔ server -->
+  <path class="wire" d="M360,340 H470" marker-start="url(#head)" marker-end="url(#head)"/>
+  <text class="lbl" x="415" y="330" text-anchor="middle">tool calls</text>
+
+  <!-- server → routes -->
+  <path class="wire" d="M910,317 H1020" marker-end="url(#head)"/>
+  <text class="lbl" x="965" y="307" text-anchor="middle">same route</text>
+  <text class="lbl" x="965" y="338" text-anchor="middle">in-process</text>
+
+  <!-- tool cards feed the server -->
+  <path class="wire" d="M572,440 V390" marker-end="url(#head)"/>
+  <path class="wire" d="M807,440 V390" marker-end="url(#head)"/>
+
+  <!-- server → analytics -->
+  <path class="wire dash" d="M690,390 V660" marker-end="url(#head)"/>
+
+  <!-- routes → install engine -->
+  <path class="wire" d="M1165,390 V440" marker-end="url(#head)"/>
+  <text class="lbl on-lane" x="1177" y="420">install</text>
+
+  <!-- routes → server: operate -->
+  <path class="wire" d="M1310,300 H1370" marker-end="url(#head)"/>
+  <text class="lbl on-lane" x="1340" y="290" text-anchor="middle">operate</text>
+  <text class="lbl on-lane" x="1340" y="324" text-anchor="middle">logs, env</text>
+
+  <!-- install engine → server: deploy -->
+  <path class="wire" d="M1310,525 H1370" marker-end="url(#head)"/>
+  <text class="lbl on-lane" x="1340" y="515" text-anchor="middle">deploy</text>
+
+  <!-- server → pipeline: spec -->
+  <path class="wire" d="M1370,718 H1310" marker-end="url(#head)"/>
+  <text class="lbl on-lane" x="1340" y="708" text-anchor="middle">OpenAPI</text>
+  <text class="lbl on-lane" x="1340" y="742" text-anchor="middle">spec</text>
+
+  <!-- pipeline → app tools -->
+  <path class="wire" d="M1020,718 H965 V630 H807 V600" marker-end="url(#head)"/>
+  <text class="lbl" x="977" y="674" text-anchor="middle" transform="rotate(-90 977 674)">typed tools</text>
+</svg>
+</body>
+</html>
