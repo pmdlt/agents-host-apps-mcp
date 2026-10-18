@@ -41,7 +41,7 @@ Comments that mention `PLAN §…` or step ids like `R2` refer to an internal de
 
 ## Built during the event
 
-Hacking started on Saturday at 10:30 PT. As of Sunday 00:30 PT, these merged in the platform's private repos:
+Hacking started on Saturday at 10:30 PT. As of Sunday 06:30 PT, these merged in the platform's private repos:
 
 - **Installs an agent can run end to end:**
   - live build logs for installs;
@@ -54,7 +54,16 @@ Hacking started on Saturday at 10:30 PT. As of Sunday 00:30 PT, these merged in 
   - finish and failure emails;
   - the console pages for all of it.
   - NocoDB and Vikunja installable, with sign-up proven closed.
-- **App connectors:** the private-network transport, the OpenAPI pipeline in this repo, the operation index and connection driver, calling app operations through the private network, tightening-only entries for the first apps, compose labels, and better tool search.
+- **App connectors:**
+  - the private-network transport, and calling app operations through it;
+  - the OpenAPI pipeline in this repo;
+  - the operation index and connection driver, with an app's API indexed in a durable workflow and promoted one operation at a time;
+  - app operations classified by Pilae's own policy, with an approval card on every write;
+  - typed app tools for the console's agent;
+  - a per-workspace switch behind a staff flag;
+  - tightening-only entries for the first apps, compose labels, and better tool search;
+  - a report of whether an installed app can be connected;
+  - a simulated sample app to try it all without a machine.
 - **MCP and the agent:**
   - tools per role on remote MCP, behind the workspace's switches, with refusals that name the role;
   - server instructions for every client;
@@ -63,7 +72,7 @@ Hacking started on Saturday at 10:30 PT. As of Sunday 00:30 PT, these merged in 
   - webhooks the agent can create and manage;
   - PostHog MCP analytics on remote traffic, with failure codes.
 
-Still open, landing next: switching connectors on per workspace, and classifying app operations by policy.
+Still open: the typed app tools over remote MCP (the console's agent has them so far), and switching connectors on for customers.
 
 Opened earlier in October and finished during the event: the step-by-step install runner, its live log stream, and the first two app recipes.
 
